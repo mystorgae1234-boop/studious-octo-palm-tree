@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Image & Animation Studio</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#100d19;color:#f7f3ff;font-family:Arial,sans-serif}
+header{padding:22px 16px;background:#1b1529;border-bottom:1px solid #39294e}
+h1{font-size:24px;margin:0 0 8px}
+header p{color:#c4b8d9;margin:0}
+main{max-width:900px;margin:auto;padding:18px}
+nav{display:flex;gap:10px;margin-bottom:20px}
+nav button,button{border:0;border-radius:10px;padding:12px 15px;background:#8b5cf6;color:white;font-weight:bold;cursor:pointer}
+nav button{flex:1}
+nav button.active{background:#c4b5fd;color:#24133e}
+.panel{background:#1b1529;border:1px solid #39294e;border-radius:16px;padding:18px;margin-bottom:16px}
+label{display:block;margin:15px 0 7px;color:#ddd0f3}
+textarea,select,input{width:100%;padding:12px;border-radius:9px;border:1px solid #49365f;background:#100d19;color:white;font-size:15px}
+textarea{min-height:105px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+#status{color:#c4b5fd;white-space:pre-wrap;margin-top:14px}
+#result{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:16px}
+#result img{width:100%;border-radius:12px}
+.note{color:#c4b8d9;font-size:13px;line-height:1.5}
+[hidden]{display:none!important}
+@media(max-width:520px){.row{grid-template-columns:1fr}main{padding:12px}}
+</style>
+</head>
+<body>
+<header>
+<h1>✨ AI Image & Animation Studio</h1>
+<p>Create anime and fantasy art from your imagination.</p>
+</header>
+<main>
+<nav>
+<button class="active" id="imageTab" onclick="showTab('image')">🎨 Image Studio</button>
+<button id="videoTab" onclick="showTab('video')">🎬 Animation Studio</button>
+</nav>
+<section id="imagePanel" class="panel">
+<h2>AI Image Generator</h2>
+<label for="prompt">Describe your character or scene</label>
+<textarea id="prompt" placeholder="Example: A detailed anime warrior with silver hair, glowing blue eyes, cinematic fantasy lighting..."></textarea>
+<label for="style">Art style</label>
+<select id="style">
+<option>Anime illustration</option>
+<option>Dark fantasy</option>
+<option>Oil painting</option>
+<option>Realistic</option>
+<option>Chibi</option>
+</select>
+<div class="row">
+<div><label for="size">Image size</label>
+<select id="size"><option value="512">512 × 512</option><option value="768" selected>768 × 768</option></select></div>
+<div><label for="count">Number of images</label>
+<select id="count"><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
+</div>
+<button style="width:100%;margin-top:18px" id="generate">Generate Images</button>
+<div id="status" role="status"></div>
+<div id="result"></div>
+<p class="note">Generation requires a compatible AI service and available workers. Free services may have queues, usage limits or failed requests.</p>
+</section>
+<section id="videoPanel" class="panel" hidden>
+<h2>AI Character Animator</h2>
+<p>Plan a character animation from a prompt or an image.</p>
+<label for="motionPrompt">Describe the action</label>
+<textarea id="motionPrompt" placeholder="Example: The character runs forward, jumps over a wall, then lands and turns around."></textarea>
+<label for="sourceImage">Character image (optional)</label>
+<input id="sourceImage" type="file" accept="image/*">
+<label for="duration">Target video length</label>
+<select id="duration"><option>5 seconds</option><option>10 seconds</option><option>30 seconds</option><option>60 seconds</option><option>Up to 5 minutes (assembled clips)</option></select>
+<p class="note">This is the interface only. Actual prompt-driven video generation requires a separate compatible video model/service; no video API is connected yet.</p>
+<button onclick="alert('Video generation is not connected yet. We will add a real video engine in a later step.')">Prepare Animation</button>
+</section>
+</main>
+<script>
+function showTab(tab){
+ document.getElementById('imagePanel').hidden=tab!=='image';
+ document.getElementById('videoPanel').hidden=tab!=='video';
+ document.getElementById('imageTab').classList.toggle('active',tab==='image');
+ document.getElementById('videoTab').classList.toggle('active',tab==='video');
+}
+document.getElementById('generate').addEventListener('click',async()=>{
+ const prompt=document.getElementById('prompt').value.trim();
+ const style=document.getElementById('style').value;
+ const size=Number(document.getElementById('size').value);
+ const count=Number(document.getElementById('count').value);
+ const status=document.getElementById('status');
+ const result=document.getElementById('result');
+ if(!prompt){status.textContent='Please enter a prompt first.';return}
+ status.textContent='Connecting to the free AI Horde service...';
+ result.replaceChildren();
+ try{
+  const response=await fetch('https://aihorde.net/api/v2/generate/async',{
+   method:'POST',
+   headers:{'Content-Type':'application/json','apikey':'0000000000','Client-Agent':'ai-image-animation-studio:1.0:github-pages'},
+   body:JSON.stringify({
+    prompt:prompt+', '+style+', masterpiece, highly detailed, polished illustration',
+    params:{width:size,height:size,n:count,steps:30},
+    nsfw:true,censor_nsfw:false
+   })
+  });
+  if(!response.ok)throw new Error('AI service returned HTTP '+response.status);
+  const data=await response.json();
+  if(!data.id)throw new Error('The AI service did not return a generation ID.');
+  status.textContent='Request accepted. Waiting for image generation...';
+  for(let i=0;i<60;i++){
+   await new Promise(resolve=>setTimeout(resolve,4000));
+   const check=await fetch('https://aihorde.net/api/v2/generate/check/'+data.id);
+   if(!check.ok)throw new Error('Could not check generation status.');
+   const state=await check.json();
+   status.textContent='Queue position: '+(state.queue_position??'—')+' | Finished: '+(state.finished??0)+'/'+(state.waiting??count);
+   if(state.faulted)throw new Error('The generation failed. Try again later or change the prompt.');
+   if(state.done){
+    const finalResponse=await fetch('https://aihorde.net/api/v2/generate/status/'+data.id);
+    if(!finalResponse.ok)throw new Error('Could not retrieve generated images.');
+    const finalData=await finalResponse.json();
+    const generations=finalData.generations||[];
+    if(!generations.length)throw new Error('No images were returned by the service.');
+    for(const item of generations){
+     if(!item.img)continue;
+     const img=document.createElement('img');
+     img.src='data:image/webp;base64,'+item.img;
+     img.alt=prompt;
+     result.appendChild(img);
+    }
+    status.textContent=result.children.length?'Done! Your images are below.':'No displayable images were returned.';
+    return;
+   }
+  }
+  status.textContent='Still processing. Please wait a little longer and try checking again.';
+ }catch(error){
+  status.textContent='Error: '+error.message;
+ }
+});
+</script>
+</body>
+</html>
